@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS4 · RPI Sender</title>
+<style>
+  :root {
+    --bg: #0f0f13; --surface: #18181f; --surface2: #222230; --border: #2e2e40;
+    --accent: #7c6af7; --accent2: #4fd1c5; --text: #e8e8f0; --muted: #8888aa;
+    --green: #68d391; --red: #fc8181;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, "SF Pro Text", system-ui, sans-serif;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 28px 20px 60px; }
+  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: .2px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+  .sub code { color: var(--accent2); font-size: 12px; }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 18px;
+  }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+
+  input[type=text], select {
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+    border-radius: 8px; padding: 9px 12px; font-size: 14px; outline: none; min-width: 170px;
+  }
+  input[type=text]:focus, select:focus { border-color: var(--accent); }
+
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  button.ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+  button.install { background: transparent; border: 1px solid var(--accent); padding: 6px 14px; }
+  button.install:hover { background: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); display: inline-block; }
+  .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .status { font-size: 13px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+
+  .files { display: flex; flex-direction: column; gap: 8px; }
+  .file {
+    display: flex; align-items: center; gap: 12px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px;
+  }
+  .file .name { flex: 1; word-break: break-all; font-size: 14px; }
+  .file .size { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .file .url { color: var(--accent2); font-size: 12px; word-break: break-all; margin-top: 2px; }
+  .empty { color: var(--muted); font-size: 14px; text-align: center; padding: 22px 0; }
+
+  #log {
+    background: #0a0a0e; border: 1px solid var(--border); border-radius: 10px;
+    font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 12px 14px; max-height: 220px; overflow: auto; white-space: pre-wrap;
+    color: var(--muted);
+  }
+  #log .ok { color: var(--green); } #log .err { color: var(--red); } #log .ev { color: var(--accent2); }
+
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  details { margin-top: 14px; }
+  textarea {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 10px; font: 13px ui-monospace, Menlo, monospace;
+    min-height: 70px; margin-top: 10px;
+  }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>PS4 · <span>RPI Sender</span></h1></header>
+  <div class="sub">Папка: <code id="root">…</code></div>
+
+  <div class="panel">
+    <div class="row">
+      <label>IP PS4</label>
+      <input type="text" id="ps4ip" placeholder="192.168.1.42">
+      <button class="ghost" id="ping">Проверить связь</button>
+      <div class="status"><span class="dot" id="dot"></span><span id="pingText">RPI не проверен</span></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <label>Раздаю с</label>
+      <select id="hostip"></select>
+      <span class="hint" id="hostHint"></span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="justify-content: space-between">
+      <label>PKG файлы</label>
+      <button class="ghost" id="refresh">Обновить</button>
+    </div>
+    <div class="files" id="files" style="margin-top:12px"></div>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <label>Прямая ссылка</label>
+      <input type="text" id="directUrl" placeholder="http://…/game.pkg" style="flex:1;min-width:260px">
+      <button id="directSend">Установить</button>
+    </div>
+    <div class="hint">PS4 скачает PKG сама — мак может вообще не участвовать в передаче.</div>
+  </div>
+
+  <div class="panel">
+    <label>Лог</label>
+    <div id="log" style="margin-top:10px">Готов к работе.</div>
+    <details>
+      <summary>Advanced: сырая JSON-команда (если прошивка/версия RPI капризничает)</summary>
+      <textarea id="rawJson">{ "method": "activate", "params": { "url": "http://…" } }</textarea>
+      <button class="ghost" id="rawSend" style="margin-top:10px">Отправить как есть</button>
+    </details>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+const state = { ips: [], files: [], hostIp: null };
+
+function log(msg, cls) {
+  const t = new Date().toLocaleTimeString();
+  logEl.innerHTML += `<span class="${cls || ''}">[${t}] ${escapeHtml(msg)}</span>\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function fmtSize(b) {
+  if (b > 1e9) return (b / 1e9).toFixed(2) + ' GB';
+  if (b > 1e6) return (b / 1e6).toFixed(1) + ' MB';
+  return (b / 1e3).toFixed(0) + ' KB';
+}
+
+function fileUrl(name) {
+  const host = state.hostIp || state.ips[0] || 'localhost';
+  return `http://${host}:8000/pkg/${encodeURIComponent(name)}`;
+}
+
+async function loadState() {
+  const r = await fetch('/api/state');
+  const s = await r.json();
+  state.ips = s.ips;
+  state.files = s.files;
+  $('root').textContent = s.root;
+
+  const sel = $('hostip');
+  sel.innerHTML = '';
+  s.ips.forEach((ip) => {
+    const o = document.createElement('option');
+    o.value = ip; o.textContent = ip;
+    sel.appendChild(o);
+  });
+  if (!state.hostIp && s.ips.length) {
+    state.hostIp = localStorage.getItem('hostIp') || s.ips[0];
+  }
+  sel.value = state.hostIp;
+  $('hostHint').textContent = 'этот адрес увидит PS4 в ссылках';
+
+  renderFiles();
+}
+
+function renderFiles() {
+  const box = $('files');
+  if (!state.files.length) {
+    box.innerHTML = '<div class="empty">В папке нет .pkg — кинь файлы и жми «Обновить»</div>';
+    return;
+  }
+  box.innerHTML = '';
+  state.files.forEach((f) => {
+    const div = document.createElement('div');
+    div.className = 'file';
+    const url = fileUrl(f.name);
+    div.innerHTML = `
+      <div style="flex:1;min-width:0">
+        <div class="name">${escapeHtml(f.name)}</div>
+        <div class="url">${escapeHtml(url)}</div>
+      </div>
+      <div class="size">${fmtSize(f.size)}</div>`;
+    const btn = document.createElement('button');
+    btn.className = 'install';
+    btn.textContent = '→ PS4';
+    btn.onclick = () => send({ url });
+    div.appendChild(btn);
+    box.appendChild(div);
+  });
+}
+
+async function send(payload) {
+  const ip = $('ps4ip').value.trim();
+  if (!ip) { log('Укажи IP PS4 (Настройки → Сеть на консоли)', 'err'); return; }
+  localStorage.setItem('ps4ip', ip);
+  log('Отправляю команду на ' + ip + ':9090 …');
+  try {
+    const r = await fetch('/api/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip, ...payload }),
+    });
+    const s = await r.json();
+    if (!r.ok) throw new Error(s.error || r.status);
+    log('Команда ушла. Дальше PS4 качает сама — прогресс смотри на экране консоли.', 'ok');
+    (s.events || []).forEach((e) => log('PS4: ' + e, 'ev'));
+  } catch (e) {
+    log('Ошибка: ' + e.message + ' — RPI запущен? IP верный?', 'err');
+  }
+}
+
+$('ping').onclick = async () => {
+  const ip = $('ps4ip').value.trim();
+  if (!ip) { log('Сначала IP PS4', 'err'); return; }
+  localStorage.setItem('ps4ip', ip);
+  $('pingText').textContent = 'проверяю…';
+  const r = await fetch('/api/ping?ip=' + encodeURIComponent(ip));
+  const s = await r.json();
+  $('dot').classList.toggle('on', s.ok);
+  $('pingText').textContent = s.ok ? 'RPI на связи :9090' : 'нет ответа (RPI не запущен?)';
+  log(s.ok ? 'Порт 9090 открыт — RPI слушает.' : 'Порт 9090 не отвечает. Запусти RPI на PS4.', s.ok ? 'ok' : 'err');
+};
+
+$('refresh').onclick = loadState;
+$('hostip').onchange = (e) => {
+  state.hostIp = e.target.value;
+  localStorage.setItem('hostIp', state.hostIp);
+  renderFiles();
+};
+$('directSend').onclick = () => {
+  const u = $('directUrl').value.trim();
+  if (!u) return;
+  send({ url: u });
+};
+$('rawSend').onclick = () => send({ rawJson: $('rawJson').value });
+
+$('ps4ip').value = localStorage.getItem('ps4ip') || '';
+loadState();
+</script>
+</body>
+</html>
